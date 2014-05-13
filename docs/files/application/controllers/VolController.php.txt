@@ -1,0 +1,172 @@
+<?php
+/**
+ * Aqusest arxiu conté el controlador dels serveis de tipus "Vol"
+ * 
+ * @package    Tripto\Application\Controllers
+ * @license    http://opensource.org/licenses/gpl-license.php  GNU Public License
+ * @author     Ian Smythe <smythe.ian@gmail.com>
+ */
+
+/**
+ * Controlador pels serveis de tipus "Vol".
+ *
+ * Gestiona totes les accions disponibles, així com les solicituds AJAX necessàries
+ * pels serveis tipus "Vol"
+ *
+ */
+class VolController extends ControllerBase
+{
+    
+    /**
+     * Defineix el model utilitzat per la classe
+     * @var object
+     */
+    private $model;
+    
+    /**
+     * Defineix la vista que utilitzarà la classe
+     * @var object
+     */
+    private $view;
+    
+    /**
+     * Els paràmetres que rep per URL del Bootstrap
+     * @var array
+     */
+    private $param;
+    
+    /**
+     * Constructor de la classe
+     * @param array $params
+     */
+    public function __construct($params) {
+        parent::__construct($params);
+        $this->param = $params;
+        $this->view = new View();
+    }
+    
+    /**
+     * Pàgina principal. Redirigeix a la funció filtrar
+     * @return void
+     */
+    public function index() {
+        
+        $this->filtrar();
+    }
+    
+    /**
+     * Comprova que estiguin introduïts tots els paràmetres POST necessaris i crida a vistaFiltrar()
+     * @return void
+     */
+    public function filtrar() {
+        $this->model = new VolModel($this->param);
+        
+        if (isset($_SESSION['params'][0])) {
+            $origen = $_SESSION['params'][0];
+        } else {
+            $origen = false;
+        }
+        
+        if (isset($_SESSION['params'][1])) {
+            $data_inici = $_SESSION['params'][1];
+        } else {
+            $data_inici = false;
+        }
+        if (isset($_SESSION['params'][2])) {
+            $data_fi = $_SESSION['params'][2];
+        } else {
+            $data_fi = false;
+        }
+        
+        if ($origen && $data_inici && $data_fi) {
+            
+            $this->vistaFiltrar($this->model->fullSearch($origen, $data_inici, $data_fi));
+        }
+    }
+    
+    /**
+     * Comprova si hi ha serveis disponibles a la zona i dates indicades, si és així els mostra
+     *
+     * @param  array $array
+     * @return void
+     */
+    public function vistaFiltrar($array) {
+        
+        $html = null;
+        
+        foreach ($array as $arr) {
+            $vals = array_values($arr);
+            
+            $data = str_replace(" ", "-", $vals[1]);
+            $divs = "<div id=\"" . $vals[0] . "\"><a href=\"" . APP_W . "/vol/trajecte/" . $data . "/" . $vals[4] . "\"><h3>" . $vals[2] . "-" . $vals[1] . "</h3><p><ul><li>Or&iacute;gen: " . $vals[2] . "</li><li>Destinaci&oacute;: " . $vals[1] . "</li><li>Company&iacute;a: " . $vals[3] . "</li><li>Data: " . $vals[4] . "</li></ul></p></a></div>";
+            $html = $html . $divs;
+        }
+        if ($html == null) {
+            $content = array('{result}' => "No hi ha vols que coincideixin amb la cerca.");
+        } else {
+            $content = array('{result}' => $html);
+        }
+        
+        $this->view = new View();
+        $valores_a_cambiar = array('{css}' => ESTILS, '{js}' => JS, '{APP_W}' => APP_W);
+        
+        $this->view = new View();
+        if (!$_SESSION['logged']) {
+            $this->view->appendTemplate('header');
+        } else {
+            $this->view->appendTemplate('header_r');
+        }
+        $this->view->appendTemplate('resultats');
+        
+        $this->view->addProp($valores_a_cambiar);
+        $this->view->appendProp($content);
+        $this->view->setProp();
+        $this->view->show();
+    }
+    
+    /**
+     * Mostra un resultat del servei.
+     * @return void
+     */
+    public function trajecte() {
+        
+        $this->model = new VolModel($this->param);
+        
+        $valores_a_cambiar = array('{css}' => ESTILS, '{js}' => JS, '{APP_W}' => APP_W);
+        $html;
+        
+        if (count($this->param) == 1) {
+            
+            $origen = urldecode(implode(array_keys($this->param)));
+            $data = implode(array_values($this->param));
+                        
+            if ($item = $this->model->showItem($origen, $data)) {
+                
+                $id = $item[0]['id'];
+                $dest = $item[0]['destinacio'];
+                $origen = $item[0]['origen'];
+                $companyia = $item[0]['companyia'];
+                $preu = $this->model->getPreu($id);
+                $preu = $preu[0][0];
+                
+                $html = '<div id="' . $id . '"><h2>' . $origen . '-' . $dest . '</h2><h3>' . $companyia . ', ' . $item[0]['data_vol'] . '</h3><p>Preu unit&agrave;ri: ' . $preu . '&euro;</p><form action="' . APP_W . '/cistella/afegir/" method="post"><input style="display:none;" name="servei" value="' . $id . '"/><input style="display:none;" name="tipus" value="vols"/><label for="places">Nombre de places: </label><input type="number" name="places" value="1" min="1"/><button id="afegir">Afegir a la cistella</button></form></div>';
+            }
+        } else {
+            $html = "404";
+        }
+        $this->view = new View();
+        if (!$_SESSION['logged']) {
+            $this->view->appendTemplate('header');
+        } else {
+            $this->view->appendTemplate('header_r');
+        }
+        $this->view->appendTemplate('item');
+        
+        $this->view->addProp($valores_a_cambiar);
+        $content = array('{item}' => $html);
+        $this->view->appendProp($content);
+        $this->view->setProp();
+        $this->view->show();
+    }
+}
+

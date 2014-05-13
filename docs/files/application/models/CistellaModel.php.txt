@@ -1,0 +1,276 @@
+<?php
+/**
+ * Aqusest arxiu conté el model que usa el Controller "Cistella"
+ * 
+ * @package    Tripto\Application\Models
+ * @license    http://opensource.org/licenses/gpl-license.php  GNU Public License
+ * @author     Ian Smythe <smythe.ian@gmail.com>
+ */
+
+/**
+ * Model que gestiona les peticions a la base de dades de CistellaController
+ *
+ */
+class CistellaModel extends Model
+{
+    
+    /**
+     * Variable protegida que retorna les dades del model. Comunica amb Controller
+     * @var array
+     */
+    protected $dataout;
+    
+    /**
+     * Variable que s'utilitzarà per a connectar-se a la base de dades a través de PDO.
+     * @var object
+     */
+    protected $db;
+    
+    /**
+     * Constructor del model.
+     *
+     * Inicialitza un objecte PDO amb els paràmetres extrets de la coniguració.
+     * @param array $params
+     */
+    public function __construct($params) {
+        parent::__construct($params);
+        $this->addDataOut($params);
+        try {
+            $config = Config::getInstance();
+            $this->db = new PDO('mysql:host=' . $config->get('DB_HOST') . ';dbname=' . $config->get('DB_NAME') . ';charset=UTF8', $config->get('DB_USERNAME'), $config->get('DB_PASSWORD'),array(PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES 'utf8'"));
+            $this->db->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
+        }
+        catch(PDOException $e) {
+            print "<p>Error: No es pot connectar amb la base de dades </p>";
+            print "<p>Error: " . $e->getMessage() . "</p>\n";
+            exit();
+        }
+    }
+    
+    /**
+     * Retorna l'array DataOut
+     * @return array
+     */
+    public function getDataOut() {
+        return $this->dataout;
+    }
+    
+    /**
+     * Afegeix paràmetres a l'array DataOut
+     * @param array $params
+     */
+    public function addDataOut($params) {
+        if (isset($this->dataout)) {
+            $this->dataout = array_merge($this->dataout, $params);
+        } else {
+            $this->dataout = $params;
+        }
+    }
+    
+    /**
+     * Retorna totes les dades d'un servei
+     * @param  string $taula Nom del tipus de servei
+     * @param  integer $id   Id del servei.
+     * @return array|bool Retorna un array associatiu amb les dades del servei, o false en cas erròni.
+     */
+    public function getData($taula, $id) {
+        
+        $sentencia;
+        switch ($taula) {
+            case 'hotels':
+                $sentencia = "SELECT * FROM hotels WHERE id=:id";
+                break;
+
+            case 'vols':
+                $sentencia = "SELECT * FROM vols WHERE id=:id";
+                break;
+
+            case 'escapades':
+                $sentencia = "SELECT * FROM plans WHERE id=:id";
+                break;
+        }
+        $stmt = $this->db->prepare($sentencia);
+        
+        $stmt->bindParam(":id", $id);
+        $stmt->execute();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        if (count($result) > 0) {
+            return $result;
+        } else {
+            return false;
+        }
+    }
+    
+    /**
+     * Crida a un procediment emmagatzemat per a crear una nova reserva
+     * @param  string $data Data de la reserva.
+     * @param  integer $uid  Id de l'usuari que fa la reserva.
+     * @return bool       Retorna true si la inserció ha sigut satisfactòria, false si hi ha hagut errors.
+     */
+    public function novaReserva($data, $uid) {
+        $stmt = $this->db->prepare("CALL sp_nova_reserva(:data,:uid)");
+        $stmt->bindParam(":data", $data);
+        $stmt->bindParam(":uid", $uid);
+        $stmt->execute();
+        
+        //La següent consulta retorna 0 en cas d'error, o l'últim id en cas correcte
+        if ($this->db->query('SELECT LAST_INSERT_ID()')->fetchAll(PDO::FETCH_COLUMN) [0] > 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    /**
+     * Crida a un procediment emmagatzemat per a afegir un servei reservat a la base de dades.
+     * @param  integer $sid    Id del servei.
+     * @param  integer $places Nombre de places a reservar.
+     * @return bool         Retorna true si tot ha anat bé, false si hi ha hagut errors.
+     */
+    public function serveisReserva($sid, $places) {
+        
+        $stmt = $this->db->prepare("CALL sp_servei_reservat(:sid,:places)");
+        $stmt->bindParam(":sid", $sid);
+        $stmt->bindParam(":places", $places);
+        $stmt->execute();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $lastid = $this->db->query('SELECT LAST_INSERT_ID()')->fetchAll(PDO::FETCH_COLUMN) [0];
+        $idres = $this->db->query('SELECT idreserva FROM serveis_reservats ORDER BY idreserva DESC LIMIT 1;')->fetchAll(PDO::FETCH_COLUMN) [0];
+        
+        if ($idres == $lastid) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    /**
+     * Retorna les reserves d'un usuari
+     * @param  integer $uid Id de l'usuari
+     * @return array      Un array associatiu amb les reserves de l'usuari.
+     */
+    public function reservesPendents($uid) {
+        $stmt = $this->db->prepare("SELECT * FROM reserves WHERE idusuari=:uid");
+        $stmt->bindParam(":uid", $uid);
+        $stmt->execute();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        return $result;
+    }
+    
+    /**
+     * Actualitza l'estat d'una reserva conforma s'ha pagat.
+     * @param  integer $rid Id de la reserva
+     * @return bool
+     */
+    public function pagarReserva($rid) {
+        $stmt = $this->db->prepare("UPDATE reserves SET status='TANCAT' WHERE id=:rid");
+        $stmt->bindParam(":rid", $rid);
+        $stmt->execute();
+        return true;
+    }
+    
+    /**
+     * Busca a les tres taules de serveis les dades concretes d'un servei.
+     * @param  integer $rid Id de la reserva
+     * @return array      Un array associatiu amb les dades del servei.
+     */
+    public function getServeis($rid) {
+        $stmt = $this->db->prepare("SELECT idservei from serveis_reservats where idreserva=:rid;");
+        $stmt->bindParam(":rid", $rid);
+        $stmt->execute();
+        $res = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $array = array();
+        
+        foreach ($res as $key => $value) {
+            $stmt = $this->db->prepare("SELECT * from hotels where id=:id;");
+            $stmt->bindParam(":id", $value['idservei']);
+            $stmt->execute();
+            $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $c = count($result);
+            if ($c == 0) {
+                $stmt = $this->db->prepare("SELECT * from plans where id=:id;");
+                $stmt->bindParam(":id", $value['idservei']);
+                $stmt->execute();
+                $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $co = count($result);
+                if ($co == 0) {
+                    $stmt = $this->db->prepare("SELECT * from vols where id=:id;");
+                    $stmt->bindParam(":id", $value['idservei']);
+                    $stmt->execute();
+                    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    array_push($array, $result);
+                } else {
+                    array_push($array, $result);
+                }
+            } else {
+                array_push($array, $result);
+            }
+        }
+        return $array;
+    }
+    
+    /**
+     * Retorna les places disponibles i el preu d'un servei, d'una reserva concreta.
+     * @param  integer $sid Id del servei
+     * @param  integer $rid Id de la reserva
+     * @return array|bool      Retorna un array associatiu amb el resultat o, en cas d'error, false
+     */
+    public function getDetallServei($sid, $rid) {
+        $stmt = $this->db->prepare("SELECT * from serveis_reservats where idservei=:sid and idreserva=:rid;");
+        $stmt->bindParam(":sid", $sid);
+        $stmt->bindParam(":rid", $rid);
+        $stmt->execute();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (count($result) > 0) {
+            return $result;
+        } else {
+            return false;
+        }
+    }
+    
+    /**
+     * Crida a una funció emmagatzemada per calcular el preu d'un servei.
+     * @param  integer $id    Id del servei.
+     * @param  integer $places Nombre de places a comprar.
+     * @return array         Un array amb el resultat de la funció.
+     */
+    public function calculTotal($id, $places) {
+        $stmt = $this->db->prepare("SELECT fn_calcul_preu_servei(:id,:pl);");
+        $stmt->bindParam(":id", $id);
+        $stmt->bindParam(":pl", $places);
+        $stmt->execute();
+        $result = $stmt->fetchAll();
+        return $result;
+    }
+    
+    /**
+     * Retorna el preu d'un servei.
+     * @param  integer $id Id del servei
+     * @return array     Array amb el preu del servei.
+     */
+    public function getPreu($id) {
+        $stmt = $this->db->prepare("SELECT preu FROM serveis where id=:id");
+        $stmt->bindParam(":id", $id);
+        $stmt->execute();
+        $result = $stmt->fetchAll();
+        return $result;
+    }
+    
+    /**
+     * Retorna el nombre de places disponibles d'un servei.
+     * @param  integer $id Id del servei.
+     * @return array     Array amb el nombre de places del servei.
+     */
+    public function comprovarPlaces($id) {
+        $stmt = $this->db->prepare("SELECT nplaces FROM serveis WHERE id=:id;");
+        $stmt->bindParam(":id", $id);
+        $stmt->execute();
+        $result = $stmt->fetchAll();
+        return $result;
+    }
+}
+
+

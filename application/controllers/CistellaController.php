@@ -1,0 +1,390 @@
+<?php
+/**
+ * Aqusest arxiu conté el controlador encarregat de gestionar la cistella.
+ *
+ * @package    Tripto\Application\Controllers
+ * @license    http://opensource.org/licenses/gpl-license.php  GNU Public License
+ * @author     Ian Smythe <smythe.ian@gmail.com>
+ */
+
+/**
+ * Controlador de la cistella.
+ *
+ * S'encarrega d'introduïr serveis a la cistella, pagar-los, validar-los i en general,
+ * de tota la seva gestió.
+ */
+class CistellaController extends ControllerBase
+{
+    
+    /**
+     * Defineix el model utilitzat per la classe
+     * @var object
+     */
+    private $model;
+    
+    /**
+     * Defineix la vista que utilitzarà la classe
+     * @var object
+     */
+    private $view;
+    
+    /**
+     * Els paràmetres que rep per URL del Bootstrap
+     * @var array
+     */
+    private $param;
+    
+    /**
+     * Array amb el llistat dels serveis de la cistella
+     * @var array
+     */
+    private $serveis_r;
+    
+    /**
+     * Constructor de la classe
+     * @param array $params
+     */
+    public function __construct($params) {
+        parent::__construct($params);
+        $this->param = $params;
+        $this->view = new View();
+        $this->model = new CistellaModel();
+        $this->serveis_r = array();
+    }
+    
+    /**
+     * Mostra una llista dels serveis que ha introduït l'usuari a la cistella
+     *
+     * Comprova si hi ha serveis a la cistella i després mostra una taula
+     * amb aquests serveis. A continuació calcula el preu total mitjançant
+     * el model i finalment imprimeix la taula mitjançant la vista.
+     *
+     * @return void
+     */
+    public function index() {
+        
+        $llista = '<tr>
+                        <th>Tipus</th>
+                        <th>Id</th>
+                        <th>Zona</th>
+                        <th>Destinaci&oacute;/Descripci&oacute;</th>
+                        <th>Places</th>
+                        <th>Preu unit&agrave;ri</th>
+                        <th>Accions</th>
+                    </tr>';
+        $total = 0.00;
+        
+        if (isset($_SESSION['cistella']) && count($_SESSION['cistella']) > 0) {
+            foreach ($_SESSION['cistella'] as $cistella) {
+                
+                if ($registre = $this->model->getData($cistella[0], $cistella[1])) {
+                    
+                    $servei = [$registre[0]['id'], $cistella[2]];
+                    array_push($this->serveis_r, $servei);
+                    
+                    switch ($cistella[0]) {
+                        case 'vols':
+                            $preuservei = $this->model->calculTotal($registre[0]['id'], $cistella[2]);
+                            $preu = $this->model->getPreu($registre[0]['id']);
+                            $preu = $preu[0][0];
+                            $total = $total + floatval($preuservei[0][0]);
+                            
+                            $llista = $llista . '<tr>
+                        <td>Vol</td>
+                        <td>' . $registre[0]['id'] . '</td>
+                        <td>' . $registre[0]['destinacio'] . '</td>
+                        <td>' . $registre[0]['origen'] . '</td>
+                        <td>' . $cistella[2] . '</td>
+                        <td>' . $preu . '&euro;</td>
+                        <td><a class="delserv" href="' . APP_W . '/cistella/eliminar/">Eliminar</a></td>
+                    </tr>';
+                            break;
+
+                        case 'hotels':
+                            $preuservei = $this->model->calculTotal($registre[0]['id'], $cistella[2]);
+                            $preu = $this->model->getPreu($registre[0]['id']);
+                            $preu = $preu[0][0];
+                            $total = $total + floatval($preuservei[0][0]);
+                            $llista = $llista . '<tr>
+                            <td>Hotel</td>
+                        <td>' . $registre[0]['id'] . '</td>
+                        <td>' . $registre[0]['nom'] . '</td>
+                        <td>' . $registre[0]['ciutat'] . '</td>
+                        <td>' . $cistella[2] . '</td>
+                        <td>' . $preu . '&euro;</td>
+                        <td><a class="delserv" href="' . APP_W . '/cistella/eliminar/">Eliminar</a></td>
+                    </tr>';
+                            break;
+
+                        case 'escapades':
+                            $preuservei = $this->model->calculTotal($registre[0]['id'], $cistella[2]);
+                            $preu = $this->model->getPreu($registre[0]['id']);
+                            $preu = $preu[0][0];
+                            $total = $total + floatval($preuservei[0][0]);
+                            $llista = $llista . '<tr>
+                            <td>Escapada</td>
+                        <td>' . $registre[0]['id'] . '</td>
+                        <td>' . $registre[0]['zona'] . '</td>
+                        <td>' . $registre[0]['descrip'] . '</td>
+                        <td>' . $cistella[2] . '</td>
+                        <td>' . $preu . '&euro;</td>
+                        <td><a class="delserv" href="' . APP_W . '/cistella/eliminar/">Eliminar</a></td>
+                    </tr>';
+                            break;
+                    }
+                }
+            }
+            $total = number_format($total, 2, '.', '');
+            $llista = $llista . '<tr><td colspan="5">Preu Total:</td><td>' . $total . '&euro;</td></tr>';
+            $html = '<table cellspacing="0">' . $llista . '</table><a id="comprar" href="' . APP_W . '/cistella/checkout">Comprar</a><a id="anul" href="' . APP_W . '/cistella/cancel">Anul&middot;lar</a>';
+            $_SESSION['serveis'] = $this->serveis_r;
+        } else {
+            $html = "La cistella &eacute;s buida";
+        }
+        
+        $this->view = new View();
+        $valores_a_cambiar = array('{css}' => ESTILS, '{js}' => JS, '{APP_W}' => APP_W);
+        if (!$_SESSION['logged']) {
+            $this->view->appendTemplate('header');
+        } else {
+            $this->view->appendTemplate('header_r');
+        }
+        $this->view->appendTemplate('cistella');
+        
+        $this->view->addProp($valores_a_cambiar);
+        $content = array('{cistella}' => $html);
+        
+        $this->view->appendProp($content);
+        $this->view->setProp();
+        $this->view->show();
+    }
+    
+    /**
+     * Funció que passa els ítems de la cistella a la base de dades i crea la reserva
+     *
+     * Crea una nova reserva amb l'id de l'usuari, i després introdueix els serveis reservats, mitjançant
+     * el model. Un cop acabat mostra un missatge informant a l'usuari del procés.
+     *
+     * @return void
+     */
+    
+    public function checkout() {
+        $this->view = new View();
+        $valores_a_cambiar = array('{css}' => ESTILS, '{js}' => JS, '{APP_W}' => APP_W);
+        if (!$_SESSION['logged']) {
+            $this->view->appendTemplate('header');
+        } else {
+            $this->view->appendTemplate('header_r');
+        }
+        
+        $control = true;
+        if ($_SESSION['logged']) {
+            
+            if ($this->model->novaReserva(date('Y-m-d'), $_SESSION['uid'])) {
+                
+                foreach ($_SESSION['serveis'] as $serv) {
+                    
+                    if ($this->model->serveisReserva($serv[0], $serv[1]) == false) {
+                        $control = false;
+                        break;
+                    }
+                }
+                if ($control == true) {
+                    unset($_SESSION['cistella']);
+                    $html = 'Compra realitzada amb &egrave;xit. Si us plau, feu click al seg&uuml;ent enlla&ccedil; per a procedir al pagament:<br/><a href="' . APP_W . '/cistella/reserves/">Pagament</a>';
+                } else {
+                    $html = "Error al introdu&iuml;r els serveis. Si us plau, torni-ho a intentar.";
+                }
+            } else {
+                $html = "Error al realitzar la compra";
+            }
+        } else {
+            header('Location: ' . APP_W . '/agencia/accedir');
+        }
+        $this->view->appendTemplate('resultats');
+        
+        $this->view->addProp($valores_a_cambiar);
+        $content = array('{result}' => $html);
+        
+        $this->view->appendProp($content);
+        $this->view->setProp();
+        $this->view->show();
+    }
+    
+    /**
+     * Funció que buida la cistella i retorna l'usuari a l'inici.
+     * @return void
+     */
+    public function cancel() {
+        if (isset($_SESSION['cistella'])) {
+            unset($_SESSION['cistella']);
+        }
+        header('Location: ' . APP_W);
+    }
+    
+    /**
+     * Afegeix els serveis a la cistella.
+     *
+     * Afegeix els serveis a la cistella, després de comprovar que:
+     * 1: no estigui introduït, 2: tingui places disponibles.
+     *
+     * @return void
+     */
+    public function afegir() {
+        
+        if (isset($_SESSION['cistella']) && isset($_POST['tipus']) && isset($_POST['servei']) && isset($_POST['places'])) {
+            $nouservei = true;
+            
+            foreach ($_SESSION['cistella'] as $cistella) {
+                
+                if ($cistella[1] == $_POST['servei']) {
+                    $nouservei = false;
+                    break;
+                }
+            }
+            if ($nouservei) {
+                $places = $this->model->comprovarPlaces($_POST['servei']);
+                
+                if ($_POST['places'] < $places[0][0]) {
+                    
+                    $servei = [$_POST['tipus'], $_POST['servei'], $_POST['places']];
+                    array_push($_SESSION['cistella'], $servei);
+                    
+                    echo true;
+                } else {
+                    echo "Aquest servei no té tantes places disponibles.";
+                }
+            } else {
+                
+                echo "El servei ja existeix.";
+            }
+        } else {
+            echo "error";
+        }
+    }
+    
+    /**
+     * Elimina un servei concret de la cistella
+     * @return array|string Retorna o la cistella, o un missatge d'error
+     */
+    public function eliminar() {
+        
+        $servei = $_POST['id'];
+        
+        if (isset($servei)) {
+            
+            $cis = $_SESSION['cistella'];
+            
+            for ($i = 0; $i < count($cis); $i++) {
+                
+                if ($cis[$i][1] == $servei) {
+                    
+                    array_splice($_SESSION['cistella'], $i, 1);
+                    echo true;
+                } else {
+                    echo "error";
+                }
+            }
+        }
+    }
+    
+    /**
+     * Llista totes les reserves efectuades per l'usuari.
+     *
+     * Crea una taula amb totes les reserves, indicant si han estat pagades o estan pendents
+     * de pagament. A continuació mostra la taula mitjançant la vista.
+     *
+     * @return void
+     */
+    public function reserves() {
+        $html = null;
+        
+        if ($_SESSION['logged']) {
+            if ($falten = $this->model->reservesPendents($_SESSION['uid'])) {
+                
+                foreach ($falten as $pend) {
+                    $servei = $this->model->getServeis($pend['id']);
+                    $detalls = array();
+                    foreach ($servei as $key => $value) {
+                        $detall = $this->model->getDetallServei($value[0]['id'], $pend['id']);
+                        if (isset($value[0]['data_vol'])) {
+                            
+                            $var = '<span>Or&iacute;gen: </span>' . $value[0]['origen'] . '<br/><span>Destinaci&oacute;: </span>' . $value[0]['destinacio'] . '<br/><span>Companyia: </span>' . $value[0]['companyia'] . '<br/><span>Data de reserva: </span>' . $pend['data'] . '<br/><span>Preu per persona: </span>' . $detall[0]['preu_servei'] . '<br/><span>Places reservades: </span>' . $detall[0]['places'] . '<br/>';
+                        }
+                        if (isset($value[0]['categoria'])) {
+                            $var = '<span>Nom: </span>' . $value[0]['nom'] . '<br/><span>Ciutat: ' . $value[0]['ciutat'] . '<br/><span>Categoria: </span>' . $value[0]['categoria'] . '<br/><span> Data de reserva: </span>' . $pend['data'] . '<br/><span>Preu per persona: </span>' . $detall[0]['preu_servei'] . '<br/><span>Places reservades: ' . $detall[0]['places'] . '<br/>';
+                        }
+                        if (isset($value[0]['descrip'])) {
+                            
+                            $var = '<span>Descripci&oacute;: </span>' . $value[0]['descrip'] . '<br/><span>Zona: </span>' . $value[0]['zona'] . '<br/><span> Data de reserva: </span>' . $pend['data'] . '<br/><span>Preu per persona: </span>' . $detall[0]['preu_servei'] . '<br/><span>Places reservades: </span>' . $detall[0]['places'] . '<br/>';
+                        }
+                        
+                        array_push($detalls, $var);
+                    }
+                    
+                    if ($pend['status'] == "OBERT") {
+                        
+                        $html = $html . '<div>
+                            <form action="' . APP_W . '/cistella/pagar/" method="post">
+                            <input type="text" style="display:none;" name="id" value="' . $pend['id'] . '"/>
+                            <h2>Reserva</h2>';
+                        
+                        foreach ($detalls as $det) {
+                            $html = $html . '<p>' . $det . '</p>';
+                        }
+                        $html = $html . '<button class="pagar">Pagar</button>
+                            </form>
+                            </div>';
+                    } else {
+                        
+                        $html = $html . '<div>
+                            <form>
+                            <input type="text" style="display:none;" name="id" value="' . $pend['id'] . '"/>
+                            <h2>Reserva</h2>';
+                        
+                        foreach ($detalls as $det) {
+                            $html = $html . '<p>' . $det . '</p>';
+                        }
+                        $html = $html . '<span id="pagada">Pagada</span>
+                            </form>
+                            </div>';
+                    }
+                }
+            }
+        }
+        if ($html == null) {
+            $html = "No tens cap reserva.";
+        }
+        $this->view = new View();
+        $valores_a_cambiar = array('{css}' => ESTILS, '{js}' => JS, '{APP_W}' => APP_W);
+        if (!$_SESSION['logged']) {
+            $this->view->appendTemplate('header');
+        } else {
+            $this->view->appendTemplate('header_r');
+        }
+        $this->view->appendTemplate('resultats');
+        
+        $this->view->addProp($valores_a_cambiar);
+        $content = array('{result}' => $html);
+        
+        $this->view->appendProp($content);
+        $this->view->setProp();
+        $this->view->show();
+    }
+    
+    /**
+     * Simula un pagament.
+     * @return bool|string Depenent de si ha donat o no error.
+     */
+    public function pagar() {
+        if (isset($_POST['id'])) {
+            if ($this->model->pagarReserva($_POST['id'])) {
+                echo true;
+            } else {
+                echo "Error al pagar la reserva";
+            }
+        } else {
+            echo "No hi ha cap reserva a pagar";
+        }
+    }
+}
